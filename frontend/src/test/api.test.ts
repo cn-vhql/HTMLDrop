@@ -19,6 +19,7 @@ describe("api client", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/links");
     expect(new Headers(init.headers).get("X-API-Token")).toBe("tok-123");
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer tok-123");
   });
 
   it("未设置令牌时不带 X-API-Token", async () => {

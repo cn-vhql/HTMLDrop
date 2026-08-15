@@ -276,7 +276,7 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null); const [checking, setChecking] = useState(true);
-  useEffect(() => { api<User>("/api/auth/me").then(setUser).catch(() => setUser(null)).finally(() => setChecking(false)); }, []);
+  useEffect(() => { api<User>("/api/auth/me").then(setUser).catch(() => { setApiToken(null); setUser(null); }).finally(() => setChecking(false)); }, []);
   if (checking) return <div className="loading-screen"><RefreshCw className="spin" /></div>;
   if (!user) return <Login onLogin={setUser} />;
   return <Dashboard user={user} onLogout={async () => { try { await api("/api/auth/logout", { method: "POST" }); } finally { setApiToken(null); setUser(null); } }} />;

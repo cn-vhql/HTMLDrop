@@ -21,7 +21,7 @@ from .services import clean_name, save_upload
 
 
 app = FastAPI(title="HTML Drop", version="1.0.0")
-app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, max_age=60 * 60 * 24 * 14, same_site="lax", https_only=False, path="/api")
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, max_age=60 * 60 * 24 * 14, same_site="lax", https_only=False, path="/")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -45,9 +45,13 @@ def startup() -> None:
 
 def current_user(request: Request) -> sqlite3.Row:
     # 发布页与管理台同源，仅凭会话 cookie 无法区分"管理台"与"恶意发布页"。
-    # 因此所有业务接口（含 /api/auth/me）必须携带与会话内令牌一致的 X-API-Token，
-    # 该令牌只存在于管理台 SPA 的 JS 内存中，同源发布页无法读取。
+    # 因此所有业务接口（含 /api/auth/me）必须携带与会话内令牌一致的 API 令牌。
+    # 前端令牌保存在当前标签页的 sessionStorage 中，以支持刷新后恢复登录。
     header_token = request.headers.get("X-API-Token", "")
+    if not header_token:
+        authorization = request.headers.get("Authorization", "")
+        if authorization.lower().startswith("bearer "):
+            header_token = authorization[7:].strip()
     session_token = request.session.get("api_token", "")
     if not header_token or not session_token or not hmac.compare_digest(header_token, session_token):
         raise HTTPException(status_code=401, detail="请先登录")

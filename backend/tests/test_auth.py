@@ -35,6 +35,11 @@ def test_me_wrong_token(client):
     assert r.status_code == 401
 
 
+def test_me_accepts_bearer_token(client, token):
+    r = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+
+
 def test_me_returns_default_password_flag(client, token):
     r = client.get("/api/auth/me", headers={"X-API-Token": token})
     assert r.json()["default_password"] is True

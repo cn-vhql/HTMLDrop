@@ -4,22 +4,23 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: html-drop
+    env_file:
+      - ./backend/.env
     ports:
-      - "8000:8000"
-    environment:
-      TZ: ${TZ:-Asia/Shanghai}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      # 生产环境务必通过 .env 修改，勿使用默认值
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
-      SESSION_SECRET: ${SESSION_SECRET:-please-change-this-secret}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      - "20080:8000"
     volumes:
       # 数据与上传目录持久化到宿主机
-      - ./backend/data:/app/backend/data
-      - ./backend/uploads:/app/backend/uploads
+      - /vol1/data/HTMLDrop/data:/app/backend/data
+      - /vol1/data/HTMLDrop/uploads:/app/backend/uploads
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)",
+        ]
       interval: 30s
       timeout: 5s
       start_period: 10s

@@ -33,17 +33,35 @@ export type Stats = {
   recent: { visited_at: string; browser: string; os: string; device: string; referer: string }[];
 };
 
-// 管理 API 令牌：只保存在 JS 内存中，不落 localStorage/sessionStorage，
-// 避免同源发布页（/p/*）读取后冒充管理台调用 API。
-let apiToken: string | null = null;
+const API_TOKEN_STORAGE_KEY = "html-drop-api-token";
+
+function loadApiToken(): string | null {
+  try {
+    return sessionStorage.getItem(API_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+// 保存在当前标签页的 sessionStorage，刷新页面后仍可恢复，关闭标签页后失效。
+let apiToken: string | null = loadApiToken();
 
 export function setApiToken(token: string | null) {
   apiToken = token;
+  try {
+    if (token) sessionStorage.setItem(API_TOKEN_STORAGE_KEY, token);
+    else sessionStorage.removeItem(API_TOKEN_STORAGE_KEY);
+  } catch {
+    // 浏览器禁用存储时仍允许当前页面使用内存令牌。
+  }
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  if (apiToken) headers.set("X-API-Token", apiToken);
+  if (apiToken) {
+    headers.set("X-API-Token", apiToken);
+    headers.set("Authorization", `Bearer ${apiToken}`);
+  }
   const response = await fetch(path, { ...options, headers, credentials: "include" });
   const contentType = response.headers.get("content-type") ?? "";
   const body = contentType.includes("application/json") ? await response.json() : null;
