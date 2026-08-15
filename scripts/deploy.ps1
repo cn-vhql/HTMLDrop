@@ -7,13 +7,13 @@ $ErrorActionPreference = "Stop"
 
 Set-Location (Join-Path $PSScriptRoot "..")
 
-# 1. 首次运行生成 .env
-if (-not $SkipEnv -and -not (Test-Path ".env")) {
-    Copy-Item "backend\.env.example" ".env"
+# 1. 首次运行生成 backend/.env
+if (-not $SkipEnv -and -not (Test-Path "backend\.env")) {
+    Copy-Item "backend\.env.example" "backend\.env"
     Write-Host "==================================================" -ForegroundColor Yellow
-    Write-Host " 已生成 .env" -ForegroundColor Yellow
+    Write-Host " 已生成 backend/.env" -ForegroundColor Yellow
     Write-Host " 请编辑该文件，修改 ADMIN_PASSWORD 与 SESSION_SECRET" -ForegroundColor Yellow
-    Write-Host " （不修改也能启动，但会使用不安全的默认值）" -ForegroundColor Yellow
+    Write-Host " 请修改后再启动，尤其是 ADMIN_PASSWORD 与 SESSION_SECRET" -ForegroundColor Yellow
     Write-Host "==================================================" -ForegroundColor Yellow
 }
 
@@ -26,9 +26,9 @@ Write-Host ">>> 等待服务就绪..."
 for ($i = 0; $i -lt 20; $i++) {
     Start-Sleep -Seconds 3
     try {
-        $r = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/health" -UseBasicParsing -TimeoutSec 3
+        $r = Invoke-WebRequest -Uri "http://127.0.0.1:20080/api/health" -UseBasicParsing -TimeoutSec 3
         if ($r.StatusCode -eq 200) {
-            Write-Host "✔ 部署成功：http://127.0.0.1:8000" -ForegroundColor Green
+            Write-Host "✔ 部署成功：http://127.0.0.1:20080" -ForegroundColor Green
             exit 0
         }
     } catch { }

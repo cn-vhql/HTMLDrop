@@ -5,13 +5,13 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# 1. 首次运行生成 .env（已存在则跳过）
-if [ ! -f .env ]; then
-  cp backend/.env.example .env
+# 1. 首次运行生成 backend/.env（已存在则跳过）
+if [ ! -f backend/.env ]; then
+  cp backend/.env.example backend/.env
   echo "=================================================="
-  echo " 已生成 .env"
+  echo " 已生成 backend/.env"
   echo " 请编辑该文件，修改 ADMIN_PASSWORD 与 SESSION_SECRET"
-  echo " （不修改也能启动，但会使用不安全的默认值）"
+  echo " 请修改后再启动，尤其是 ADMIN_PASSWORD 与 SESSION_SECRET"
   echo "=================================================="
 fi
 
@@ -22,8 +22,8 @@ docker compose up -d --build
 # 3. 等待健康检查通过
 echo ">>> 等待服务就绪..."
 for _ in $(seq 1 20); do
-  if curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://127.0.0.1:8000/api/health 2>/dev/null | grep -q "200"; then
-    echo "✔ 部署成功：http://127.0.0.1:8000"
+  if curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://127.0.0.1:20080/api/health 2>/dev/null | grep -q "200"; then
+    echo "✔ 部署成功：http://127.0.0.1:20080"
     exit 0
   fi
   sleep 3
