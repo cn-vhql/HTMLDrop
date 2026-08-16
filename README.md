@@ -28,7 +28,7 @@ HTML Drop 是一个面向个人使用的 HTML / ZIP 静态页面发布服务：�
 - 点击选择或拖拽上传，发布后自动生成公开链接
 - 发布页可选访问密码，也可以随时编辑或移除密码
 - 管理台支持搜索、分页、编辑、替换文件、停止 / 恢复和删除
-- 提供 PV / UV、每日访问、最近 24 小时、浏览器、设备、系统和来源统计
+- 提供 PV / UV、每日访问、最近 24 小时、浏览器、设备、系统和来源统计；UV 使用第一方访客 Cookie 粗略统计，所有时间按北京时间显示
 - 发布成功后可以复制链接、打开页面、查看二维码和下载二维码图片
 - 使用 SQLite 保存数据，不需要额外数据库服务
 - ZIP 解压具备路径穿越、符号链接、文件数量和总大小限制
@@ -69,7 +69,7 @@ HTML Drop 是一个面向个人使用的 HTML / ZIP 静态页面发布服务：�
 cp backend/.env.example backend/.env
 ```
 
-编辑 `backend/.env`，至少修改 `ADMIN_PASSWORD` 和 `SESSION_SECRET`，然后启动：
+编辑 `backend/.env`，至少修改 `ADMIN_PASSWORD`、`SESSION_SECRET` 和 `ANALYTICS_SALT`，然后启动：
 
 ```bash
 docker compose up -d --build
@@ -129,6 +129,7 @@ pnpm run dev
 | `ADMIN_USERNAME`  | 管理员账号                                                              |
 | `ADMIN_PASSWORD`  | 管理员密码，生产环境务必修改                                            |
 | `SESSION_SECRET`  | 会话和访问密码 Cookie 的签名密钥，建议使用 `openssl rand -hex 32` 生成  |
+| `ANALYTICS_SALT`  | 访客 Cookie 统计标识的哈希密钥，建议使用独立的随机值；修改后新访问会作为新的 UV |
 | `PUBLIC_BASE_URL` | 公开链接的完整基址，例如 `https://page.example.com`；留空则使用请求来源 |
 | `TZ`              | 容器时区，默认 `Asia/Shanghai`                                          |
 
@@ -206,6 +207,7 @@ pnpm test
 ## 安全提示
 
 - 不要把真实的 `backend/.env`、管理员密码或 `SESSION_SECRET` 提交到仓库。
+- UV 基于公开页的第一方访客 Cookie 估算，清理 Cookie、换浏览器或无痕模式会被视为新访客；旧统计记录会回退使用 IP 哈希。统计页面按北京时间显示。
 - 管理令牌保存在当前浏览器标签页的 `sessionStorage` 中，刷新页面后仍可保持登录，关闭标签页后失效。
 - 同源公开页面的脚本理论上可能读取 `sessionStorage`。如果要托管不可信页面，建议将公开页面反代到独立域名，把管理台和公开内容分开。
 - 上线前务必修改管理员密码，并设置随机的 `SESSION_SECRET`。

@@ -28,7 +28,7 @@ The project takes inspiration from the lightweight publishing idea behind [Cloud
 - Upload by file picker or drag and drop, then receive a public link
 - Add, edit, or remove an optional access password
 - Search, paginate, edit, replace, pause, resume, and delete published pages
-- View PV / UV, daily visits, recent 24-hour traffic, browsers, devices, operating systems, and referrers
+- View PV / UV, daily visits, recent 24-hour traffic, browsers, devices, operating systems, and referrers; UV is approximated with a first-party visitor cookie and times are shown in China Standard Time
 - Copy links, open pages, view QR codes, and download QR code images
 - Store data in SQLite without an additional database service
 - Protect ZIP extraction against path traversal, symbolic links, excessive file counts, and oversized archives
@@ -69,7 +69,7 @@ Create the local configuration file:
 cp backend/.env.example backend/.env
 ```
 
-Edit `backend/.env` and, at minimum, change `ADMIN_PASSWORD` and `SESSION_SECRET`. Then build and start the service:
+Edit `backend/.env` and, at minimum, change `ADMIN_PASSWORD`, `SESSION_SECRET`, and `ANALYTICS_SALT`. Then build and start the service:
 
 ```bash
 docker compose up -d --build
@@ -129,6 +129,7 @@ Copy `backend/.env.example` to `backend/.env`. Do not commit the real `backend/.
 | `ADMIN_USERNAME`  | Administrator username                                                                          |
 | `ADMIN_PASSWORD`  | Administrator password; change it in production                                                 |
 | `SESSION_SECRET`  | Signing key for sessions and access-password cookies; generate one with `openssl rand -hex 32`  |
+| `ANALYTICS_SALT`  | HMAC key for visitor-cookie analytics; use an independent random value. Changing it makes later visits count as new UVs |
 | `PUBLIC_BASE_URL` | Full public base URL, for example `https://page.example.com`; request origin is used when empty |
 | `TZ`              | Container timezone, `Asia/Shanghai` by default                                                  |
 
@@ -206,6 +207,7 @@ pnpm test
 ## Security Notes
 
 - Never commit the real `backend/.env`, administrator password, or `SESSION_SECRET`.
+- UV is an estimate based on a first-party cookie for public pages. Clearing it, switching browsers, or using private browsing counts as a new visitor; legacy records fall back to an IP hash. Analytics times use China Standard Time.
 - The management token is stored in the current browser tab's `sessionStorage`, so a refresh keeps the session while closing the tab clears it.
 - Scripts from same-origin public pages could theoretically read `sessionStorage`. If you host untrusted pages, put public pages behind a separate domain and keep the management console on its own origin.
 - Change the administrator password and set a random `SESSION_SECRET` before exposing the service publicly.

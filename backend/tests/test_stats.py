@@ -85,6 +85,39 @@ def test_stats_hourly_window(client, auth):
     assert sum(d["pv"] for d in s["daily"]) == 4
 
 
+def test_stats_groups_dates_in_beijing_time(client, auth):
+    r = client.post("/api/links", data={"name": "时区"}, files=make_upload(), headers=auth)
+    link = r.json()
+    with database.get_connection() as db:
+        # SQLite 中的 UTC 16:30 是北京时间次日 00:30。
+        db.execute(
+            "INSERT INTO visits(link_id, day, visited_at, ip_hash, user_agent, referer, device, browser, os) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (link["id"], "2026-01-01", "2026-01-01 16:30:00", "hash-utc", "UA", "", "desktop", "Chrome", "Windows"),
+        )
+    s = client.get(f"/api/links/{link['id']}/stats", headers=auth).json()
+    assert s["daily"] == [{"day": "2026-01-02", "pv": 1, "uv": 1}]
+    assert s["peak"] == {"day": "2026-01-02", "pv": 1}
+
+
+def test_database_migrates_existing_visits_table(tmp_path, monkeypatch):
+    database_path = tmp_path / "data" / "app.db"
+    monkeypatch.setattr(database, "DATA_DIR", database_path.parent)
+    monkeypatch.setattr(database, "UPLOAD_DIR", tmp_path / "uploads")
+    monkeypatch.setattr(database, "DB_PATH", database_path)
+    with database.get_connection() as db:
+        db.execute(
+            "CREATE TABLE visits (id INTEGER PRIMARY KEY, link_id INTEGER NOT NULL, visited_at TEXT NOT NULL, day TEXT NOT NULL, ip_hash TEXT NOT NULL)"
+        )
+
+    database.init_db()
+
+    with database.get_connection() as db:
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(visits)")}
+        indexes = {row["name"] for row in db.execute("PRAGMA index_list(visits)")}
+    assert "visitor_hash" in columns
+    assert "idx_visits_link_visitor" in indexes
+
+
 def test_stats_requires_auth(client, auth):
     r = client.post("/api/links", data={"name": "x"}, files=make_upload(), headers=auth)
     link = r.json()

@@ -15,6 +15,11 @@ SESSION_SECRET = os.getenv("SESSION_SECRET") or secrets.token_urlsafe(48)
 if os.getenv("SESSION_SECRET") is None:
     logging.warning("未设置 SESSION_SECRET，已生成随机密钥；重启后所有会话与 IP 统计哈希将失效，请通过环境变量固定该值")
 
+# 统计标识与会话签名分离。为兼容已有部署，未配置时回退到 SESSION_SECRET。
+ANALYTICS_SALT = os.getenv("ANALYTICS_SALT") or SESSION_SECRET
+VISITOR_COOKIE_NAME = "html_drop_visitor"
+VISITOR_COOKIE_MAX_AGE = 180 * 24 * 3600
+
 
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
@@ -36,7 +41,15 @@ def verify_password(password: str, encoded: str) -> bool:
 
 
 def hash_ip(ip: str) -> str:
-    return hmac.new(SESSION_SECRET.encode(), ip.encode(), hashlib.sha256).hexdigest()
+    return hmac.new(ANALYTICS_SALT.encode(), ip.encode(), hashlib.sha256).hexdigest()
+
+
+def make_visitor_id() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def hash_visitor(visitor_id: str) -> str:
+    return hmac.new(ANALYTICS_SALT.encode(), visitor_id.encode(), hashlib.sha256).hexdigest()
 
 
 PASSWORD_COOKIE_MAX_AGE = 30 * 24 * 3600
@@ -72,4 +85,3 @@ def verify_password_cookie(slug: str, password_hash: str, value: str) -> bool:
 
 def make_slug() -> str:
     return secrets.token_urlsafe(7)
-

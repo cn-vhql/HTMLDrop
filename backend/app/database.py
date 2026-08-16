@@ -48,6 +48,7 @@ def init_db() -> None:
                 visited_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 day TEXT NOT NULL,
                 ip_hash TEXT NOT NULL,
+                visitor_hash TEXT,
                 user_agent TEXT NOT NULL DEFAULT '',
                 referer TEXT NOT NULL DEFAULT '',
                 device TEXT NOT NULL DEFAULT 'desktop',
@@ -57,10 +58,14 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_visits_link_day ON visits(link_id, day);
             CREATE INDEX IF NOT EXISTS idx_visits_link_ip ON visits(link_id, ip_hash);
+            CREATE INDEX IF NOT EXISTS idx_visits_link_visited_at ON visits(link_id, visited_at);
             """
         )
-        # 兼容旧库：为 links 表补充访问密码列（SQLite 无 ADD COLUMN IF NOT EXISTS）
+        # 兼容旧库：SQLite 无 ADD COLUMN IF NOT EXISTS。
         columns = {row["name"] for row in db.execute("PRAGMA table_info(links)")}
         if "password_hash" not in columns:
             db.execute("ALTER TABLE links ADD COLUMN password_hash TEXT")
-
+        visit_columns = {row["name"] for row in db.execute("PRAGMA table_info(visits)")}
+        if "visitor_hash" not in visit_columns:
+            db.execute("ALTER TABLE visits ADD COLUMN visitor_hash TEXT")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_visits_link_visitor ON visits(link_id, visitor_hash)")

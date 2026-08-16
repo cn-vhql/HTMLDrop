@@ -7,7 +7,7 @@ import os
 import secrets
 import shutil
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .database import UPLOAD_DIR, get_connection, init_db
-from .security import PASSWORD_COOKIE_MAX_AGE, SESSION_SECRET, hash_ip, hash_password, make_slug, sign_password_cookie, verify_password, verify_password_cookie
+from .security import PASSWORD_COOKIE_MAX_AGE, SESSION_SECRET, VISITOR_COOKIE_MAX_AGE, VISITOR_COOKIE_NAME, hash_ip, hash_password, hash_visitor, make_slug, make_visitor_id, sign_password_cookie, verify_password, verify_password_cookie
 from .services import clean_name, save_upload
 
 
@@ -27,6 +27,9 @@ app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allo
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 logger = logging.getLogger(__name__)
+
+BEIJING_TIME_MODIFIER = "+8 hours"
+BEIJING_OFFSET = timedelta(hours=8)
 
 
 @app.on_event("startup")
@@ -221,11 +224,14 @@ def link_stats(link_id: int, user: sqlite3.Row = Depends(current_user)) -> dict:
         row = db.execute("SELECT id, view_count FROM links WHERE id = ? AND status != 'deleted'", (link_id,)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="链接不存在")
-        daily = db.execute("SELECT day, COUNT(*) AS pv, COUNT(DISTINCT ip_hash) AS uv FROM visits WHERE link_id = ? GROUP BY day ORDER BY day DESC LIMIT 90", (link_id,)).fetchall()
-        hourly = db.execute("SELECT strftime('%Y-%m-%d %H', visited_at) AS hour, COUNT(*) AS pv, COUNT(DISTINCT ip_hash) AS uv FROM visits WHERE link_id = ? AND visited_at >= datetime('now', '-24 hours') GROUP BY hour ORDER BY hour ASC", (link_id,)).fetchall()
-        recent_uv = db.execute("SELECT COUNT(DISTINCT ip_hash) AS value FROM visits WHERE link_id = ? AND visited_at >= datetime('now', '-30 days')", (link_id,)).fetchone()["value"]
-        total_uv = db.execute("SELECT COUNT(DISTINCT ip_hash) AS value FROM visits WHERE link_id = ?", (link_id,)).fetchone()["value"]
-        peak = db.execute("SELECT day, COUNT(*) AS pv FROM visits WHERE link_id = ? GROUP BY day ORDER BY pv DESC, day DESC LIMIT 1", (link_id,)).fetchone()
+        visitor_key = "COALESCE(visitor_hash, ip_hash)"
+        beijing_day = f"date(datetime(visited_at, '{BEIJING_TIME_MODIFIER}'))"
+        beijing_hour = f"strftime('%Y-%m-%d %H', visited_at, '{BEIJING_TIME_MODIFIER}')"
+        daily = db.execute(f"SELECT {beijing_day} AS day, COUNT(*) AS pv, COUNT(DISTINCT {visitor_key}) AS uv FROM visits WHERE link_id = ? GROUP BY {beijing_day} ORDER BY {beijing_day} DESC LIMIT 90", (link_id,)).fetchall()
+        hourly = db.execute(f"SELECT {beijing_hour} AS hour, COUNT(*) AS pv, COUNT(DISTINCT {visitor_key}) AS uv FROM visits WHERE link_id = ? AND visited_at >= datetime('now', '-24 hours') GROUP BY {beijing_hour} ORDER BY {beijing_hour} ASC", (link_id,)).fetchall()
+        recent_uv = db.execute(f"SELECT COUNT(DISTINCT {visitor_key}) AS value FROM visits WHERE link_id = ? AND visited_at >= datetime('now', '-30 days')", (link_id,)).fetchone()["value"]
+        total_uv = db.execute(f"SELECT COUNT(DISTINCT {visitor_key}) AS value FROM visits WHERE link_id = ?", (link_id,)).fetchone()["value"]
+        peak = db.execute(f"SELECT {beijing_day} AS day, COUNT(*) AS pv FROM visits WHERE link_id = ? GROUP BY {beijing_day} ORDER BY pv DESC, {beijing_day} DESC LIMIT 1", (link_id,)).fetchone()
         browsers = db.execute("SELECT browser AS name, COUNT(*) AS value FROM visits WHERE link_id = ? GROUP BY browser ORDER BY value DESC LIMIT 8", (link_id,)).fetchall()
         devices = db.execute("SELECT device AS name, COUNT(*) AS value FROM visits WHERE link_id = ? GROUP BY device ORDER BY value DESC", (link_id,)).fetchall()
         oss = db.execute("SELECT os AS name, COUNT(*) AS value FROM visits WHERE link_id = ? GROUP BY os ORDER BY value DESC", (link_id,)).fetchall()
@@ -251,6 +257,14 @@ def _client_info(request: Request) -> tuple[str, str, str, str, str, str]:
     browser = "Edge" if "edg/" in lowered else "Chrome" if "chrome" in lowered else "Safari" if "safari" in lowered else "Firefox" if "firefox" in lowered else "Other"
     operating_system = "Windows" if "windows" in lowered else "Android" if "android" in lowered else "iOS" if "iphone" in lowered or "ipad" in lowered or "ipod" in lowered else "macOS" if "mac os" in lowered else "Linux" if "linux" in lowered else "Other"
     return hash_ip(request.client.host if request.client else "unknown"), user_agent[:500], request.headers.get("referer", "")[:500], device, browser, operating_system
+
+
+def _visitor_hash(request: Request) -> tuple[str, str | None]:
+    visitor_id = request.cookies.get(VISITOR_COOKIE_NAME, "")
+    if visitor_id and len(visitor_id) <= 128:
+        return hash_visitor(visitor_id), None
+    visitor_id = make_visitor_id()
+    return hash_visitor(visitor_id), visitor_id
 
 
 def _password_page(slug: str, error: str = "") -> HTMLResponse:
@@ -368,6 +382,7 @@ def _not_found_page() -> HTMLResponse:
 
 
 def _serve_page(request: Request, slug: str, asset_path: str = ""):
+    new_visitor_id: str | None = None
     with get_connection() as db:
         link = db.execute("SELECT * FROM links WHERE slug = ? AND status != 'deleted'", (slug,)).fetchone()
         if link is None:
@@ -387,13 +402,18 @@ def _serve_page(request: Request, slug: str, asset_path: str = ""):
         if not asset_path or asset_path.lower() == "index.html":
             try:
                 ip_hash, user_agent, referer, device, browser, operating_system = _client_info(request)
+                visitor_hash, new_visitor_id = _visitor_hash(request)
                 db.execute("UPDATE links SET view_count = view_count + 1 WHERE id = ?", (link["id"],))
-                db.execute("INSERT INTO visits(link_id, day, ip_hash, user_agent, referer, device, browser, os) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (link["id"], datetime.now(UTC).date().isoformat(), ip_hash, user_agent, referer, device, browser, operating_system))
+                day = (datetime.now(UTC) + BEIJING_OFFSET).date().isoformat()
+                db.execute("INSERT INTO visits(link_id, day, ip_hash, visitor_hash, user_agent, referer, device, browser, os) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (link["id"], day, ip_hash, visitor_hash, user_agent, referer, device, browser, operating_system))
             except Exception:
                 # 统计失败不应影响页面访问，只记录日志
                 logger.exception("记录访问统计失败 (slug=%s)", slug)
     media_type = mimetypes.guess_type(str(requested))[0] or "application/octet-stream"
-    return FileResponse(requested, media_type=media_type)
+    response = FileResponse(requested, media_type=media_type)
+    if new_visitor_id is not None:
+        response.set_cookie(key=VISITOR_COOKIE_NAME, value=new_visitor_id, max_age=VISITOR_COOKIE_MAX_AGE, path="/p/", httponly=True, samesite="lax", secure=request.url.scheme == "https")
+    return response
 
 
 @app.post("/p/{slug}/verify")

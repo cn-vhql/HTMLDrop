@@ -15,6 +15,29 @@ def test_public_page_served_and_counts_view(client, auth):
     assert next(i for i in items if i["slug"] == slug)["view_count"] == 1
 
 
+def test_public_page_sets_visitor_cookie_and_counts_by_cookie(client, auth):
+    r = client.post("/api/links", data={"name": "访客"}, files=make_upload(), headers=auth)
+    link = r.json()
+
+    first = client.get(f"/p/{link['slug']}")
+    cookie = first.headers["set-cookie"]
+    assert "html_drop_visitor=" in cookie
+    assert "HttpOnly" in cookie
+    assert "Path=/p/" in cookie
+    assert "SameSite=lax" in cookie
+
+    client.get(f"/p/{link['slug']}")
+    stats = client.get(f"/api/links/{link['id']}/stats", headers=auth).json()
+    assert stats["total_uv"] == 1
+
+    # 清除浏览器 Cookie 后，即使代理 IP 不变，也应作为新的访客统计。
+    client.cookies.clear()
+    client.get(f"/p/{link['slug']}")
+    new_auth = {"X-API-Token": client.post("/api/auth/login", data={"username": "admin", "password": "admin123"}).json()["api_token"]}
+    stats = client.get(f"/api/links/{link['id']}/stats", headers=new_auth).json()
+    assert stats["total_uv"] == 2
+
+
 def test_index_html_explicit_counting(client, auth):
     r = client.post("/api/links", data={"name": "x"}, files=make_upload(), headers=auth)
     slug = r.json()["slug"]
